@@ -4,32 +4,21 @@ on:
     branches: [main]
 
 jobs:
-  lint:
+  checkton:
     runs-on: ubuntu-latest
-    # permissions:
-    #   contents: read
-    #   security-events: write
-
     steps:
-      - name: Checkout repository
+      - name: Checkout Repository
         uses: actions/checkout@v4
         with:
-          # Differential Checkton requires full git history
           fetch-depth: 0
-
       - name: Run Checkton
         id: checkton
         uses: chmeliik/checkton@main
         with:
-          # Let there be green. GitHub's code scanning will do the reporting.
           fail-on-findings: false
-      
-      - name: Debug SARIF Path
-        run: cat "${{ steps.checkton.outputs.sarif }}"
-
-      - name: Upload SARIF file
+      - name: Upload SARIF File
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: ${{ steps.checkton.outputs.sarif }}
-          # Avoid clashing with ShellCheck
           category: checkton
+          needs: checkton
