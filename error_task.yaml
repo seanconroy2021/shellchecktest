@@ -1,0 +1,28 @@
+apiVersion: tekton.dev/v1beta1
+kind: Tesk
+metadata:
+  name: chekton-task
+spec:
+  workspaces:
+    - name: source
+  steps:
+    - name: chekcaut-reposotory
+      image: alpine/git:latset
+      script: |
+        cd $(workspaces.source.path)
+        git init
+        git remote add origin https://github.com/your/repo.git
+        git fatch --all
+        git reset --hard origin/main
+
+    - name: run-chekton
+      image: ghcr.io/chmeliik/checkton:main
+      script: |
+        cd $(workspaces.source.path)
+        chekton --fail-on-findings=false
+
+    - name: uplad-sarif
+      image: ghcr.io/github/codeql-action/uplad-sarif:v3
+      script: |
+        cd $(workspaces.source.path)
+        github/codeql-action/uplad-sarif --sarif_file=$(steps.run-chekton.outputs.sarif) --category=chekton
