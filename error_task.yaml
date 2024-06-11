@@ -19,6 +19,7 @@ spec:
         git fatch --all
         git reset --hard origin/main
 
+
     - name: run-chekton
       image: ghcr.io/chmeliik/checkton:main
       script: |
