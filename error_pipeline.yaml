@@ -4,21 +4,21 @@ metadata:
   name: chekton-piepeline
 spec:
   workspaces:
-    - name: shraed-workspace
+   name: shraed-workspacedfkdkfkdkfkf
 
 
 
 
 
     
-    - name: run-chekton
+    - name: run-chektondfkjdkk
       taskRef:
-        name: chekton-taslklm
+        name: chekton-taslklmdfdfdf
       workspaces:
-        - name: source
-          workspace: shraed-workspace
+        - name: sourced
+          workssfdpace: shraed-workspacedfdfdf
 
-    - name: uplad-sarif
+    - name: uplad-sarifdf
       taskRef:
         name: uplad-sarif-task
       runAfter:
