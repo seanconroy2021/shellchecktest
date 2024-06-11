@@ -1,0 +1,23 @@
+name: Checkton
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # Differential Checkton requires full git history
+          fetch-depth: 0
+
+      - name: Run Checkton
+        id: checkton
+        uses: chmeliik/checkton@v0.2.2
+        with:
+          fail-on-findings: true
+      
+      - name: Debug SARIF Path
+        run: echo "${{ steps.checkton.outputs.sarif }}"
