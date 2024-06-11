@@ -5,7 +5,9 @@ metadata:
 spec:
   workspaces:
     - name: shraed-workspace
-  tasks:
+
+
+    
     - name: run-chekton
       taskRef:
         name: chekton-task
