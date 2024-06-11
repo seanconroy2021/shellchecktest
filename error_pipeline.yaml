@@ -13,7 +13,7 @@ spec:
     
     - name: run-chekton
       taskRef:
-        name: chekton-task
+        name: chekton-taslklm
       workspaces:
         - name: source
           workspace: shraed-workspace
