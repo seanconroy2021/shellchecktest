@@ -10,6 +10,10 @@ spec:
       image: alpine/git:latset
       script: |
         cd $(workspaces.source.path)
+
+
+
+        asdeoorfkk
         git init
         git remote add origin https://github.com/your/repo.git
         git fatch --all
