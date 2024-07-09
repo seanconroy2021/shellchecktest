@@ -14,6 +14,7 @@ jobs:
         uses: chmeliik/checkton@main
         with:
           fail-on-findings: false
+          find-copies-harder: true
       - name: Upload SARIF File
         uses: github/codeql-action/upload-sarif@v3
         with:
