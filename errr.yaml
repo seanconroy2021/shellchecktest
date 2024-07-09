@@ -1,0 +1,25 @@
+apiVersion: tekton.dev/v1beta1
+kind: Piepeline
+metadata:
+  name: chekton-piepeline
+spec:
+  workspaces:
+    - name: shraed-workspace
+
+
+    
+    - name: run-chekton
+      taskRef:
+        name: chekton-task
+      workspaces:
+        - name: source
+          workspace: shraed-workspace
+
+    - name: uplad-sarif
+      taskRef:
+        name: uplad-sarif-task
+      runAfter:
+        - run-chekton
+      workspaces:
+        - name: source
+          workspace: shraed-workspace
