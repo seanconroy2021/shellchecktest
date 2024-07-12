@@ -1,7 +1,7 @@
 name: Checkton
 on:
   pull_request:
-    branches: [main]
+    types: [opened, synchronize, reopened]
 
 jobs:
   checkton:
@@ -13,7 +13,7 @@ jobs:
           fetch-depth: 0
       - name: Run Checkton
         id: checkton
-        uses: chmeliik/checkton@main
+        uses: chmeliik/checkton@v0.1.2
         with:
           fail-on-findings: false
           find-copies-harder: true
@@ -22,3 +22,22 @@ jobs:
         with:
           sarif_file: ${{ steps.checkton.outputs.sarif }}
           category: checkton
+      - name: View SARIF File
+        run: cat ${{ steps.checkton.outputs.sarif }}
+      - name: Post Lint Issues to PR
+        if: env.rules != '0'
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: Lint Issues
+          message: |
+            **Lint Issues found:**
+            $(jq '.runs[].results[] | {ruleId, message: .message.text, location: .locations[].physicalLocation}' "${{ steps.checkton.outputs.sarif }}")
+          GITHUB_TOKEN: ${{ secrets.TOKEN }}
+
+      - name: Remove Lint Issues Comment
+        if: env.rules == '0'
+        uses: peter-evans/delete-pull-request-comment@v2
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          body-includes: Lint Issues
+          GITHUB_TOKEN: ${{ secrets.TOKEN }}
