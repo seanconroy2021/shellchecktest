@@ -18,6 +18,3 @@ jobs:
         uses: chmeliik/checkton@v0.2.2
         with:
           fail-on-findings: true
-      
-      - name: Debug SARIF Path
-        run: echo "${{ steps.checkton.outputs.sarif }}"
