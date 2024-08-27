@@ -1,0 +1,169 @@
+---
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: add-fbc-contribution
+  labels:
+    app.kubernetes.io/version: "3.1.0"
+  annotations:
+    tekton.dev/pipelines.minVersion: "0.12.1"
+    tekton.dev/tags: release
+spec:
+  description: >-
+    Task to create internalrequests to add contributions to index images
+  params:
+    - name: snapshotPath
+      description: Path to the JSON string of the mapped Snapshot spec in the data workspace
+      type: string
+    - name: dataPath
+      description: Path to the JSON string of the merged data to use in the data workspace
+      type: string
+    - name: binaryImage
+      type: string
+      description: binaryImage value updated by update-ocp-tag task
+    - name: fromIndex
+      type: string
+      description: fromIndex value updated by update-ocp-tag task
+    - name: targetIndex
+      type: string
+      description: targetIndex value updated by update-ocp-tag task
+    - name: pipelineRunUid
+      type: string
+      description: The uid of the current pipelineRun. Used as a label value when creating internal requests
+    - name: resultsDirPath
+      type: string
+      description: Path to the results directory in the data workspace
+  results:
+    - name: buildTimestamp
+      description: Build timestamp used in the tag
+    - name: mustSignIndexImage
+      description: Whether the index image should be signed
+    - name: mustPublishIndexImage
+      description: Whether the index image should be published
+    - name: requestTargetIndex
+      description: The targetIndex used in this request
+    - name: requestResultsFile
+      description: Internal Request results file
+    - name: requestMessage
+      description: Internal Request message
+    - name: requestReason
+      description: Internal Request reason
+    - name: indexImageDigests
+      description: list of manifest digests for each arch from manifest list in index image
+  workspaces:
+    - name: data
+      description: workspace to read and save files
+  steps:
+    - name: add-contribution
+      image: quay.io/konflux-ci/release-service-utils:e633d51cd41d73e4b3310face21bb980af7a662f
+      script: |
+        #!/usr/bin/env sh
+        #
+        set -eo pipefail
+
+        SNAPSHOT_PATH=$(workspaces.data.path)/$(params.snapshotPath)
+        RESULTS_FILE="$(workspaces.data.path)/$(params.resultsDirPath)/add-fbc-contribution-results.json"
+        DATA_FILE="$(workspaces.data.path)/$(params.dataPath)"
+        if [ ! -f "${DATA_FILE}" ] ; then
+            echo "No valid data file was provided."
+            exit 1
+        fi
+
+        echo -n "$(workspaces.data.path)/ir-$(context.taskRun.uid)-result.json" > $(results.requestResultsFile.path)
+
+        # IIB is the default internal pipeline for fbc requests
+        request=$(jq -r '.fbc.request // "iib"' ${DATA_FILE})
+
+        default_build_timeout_seconds="1500"
+        default_request_timeout_seconds="1500"
+
+        iib_overwrite_from_index_credential=$(jq -r \
+          '.fbc.iibOverwriteFromIndexCredential // "iib-overwrite-fromimage-credentials"' ${DATA_FILE})
+        iib_service_config_secret=$(jq -r '.fbc.iibServiceConfigSecret // "iib-services-config"' ${DATA_FILE})
+        iib_service_account_secret=$(jq -r '.fbc.iibServiceAccountSecret // "iib-service-account"' ${DATA_FILE})
+        build_tags=$(jq '.fbc.buildTags // []' ${DATA_FILE})
+        add_arches=$(jq '.fbc.addArches // []' ${DATA_FILE})
+        hotfix=$(jq -r '.fbc.hotfix // "false"' ${DATA_FILE})
+        pre_ga=$(jq -r '.fbc.preGA // "false"' ${DATA_FILE})
+        staged_index=$(jq -r '.fbc.stagedIndex // "false"' ${DATA_FILE})
+        product_name=$(jq -r '.fbc.productName // ""' ${DATA_FILE})
+        product_version=$(jq -r '.fbc.productVersion // ""' ${DATA_FILE})
+        build_timeout_seconds=$(jq -r --arg build_timeout_seconds ${default_build_timeout_seconds} \
+            '.fbc.buildTimeoutSeconds // $build_timeout_seconds' ${DATA_FILE})
+        request_timeout_seconds=$(jq -r --arg request_timeout_seconds ${default_request_timeout_seconds} \
+            '.fbc.requestTimeoutSeconds // $request_timeout_seconds' ${DATA_FILE})
+        fbc_fragment=$(jq -cr '.components[0].containerImage' ${SNAPSHOT_PATH})
+
+        timestamp_format=$(jq -r '.fbc.timestampFormat // "%s"' ${DATA_FILE})
+        timestamp=$(date "+${timestamp_format}")
+
+        # default target_index
+        target_index=$(params.targetIndex)
+
+        if [ "${hotfix}" == "true" ] && [ "${pre_ga}" == "true" ]; then
+          echo "fbc.preGA and fbc.hotfix are mutually exclusive. Please set just one in the ReleasePlanAdmission"
+          exit 1
+        fi
+
+        # the target_index is modified when the pipelinerun is a for `hotfix` or a `pre-GA` release
+        if [ "${hotfix}" == "true" ]; then
+          issue_id=$(jq -r '.fbc.issueId // empty' ${DATA_FILE})
+          if [ -z "${issue_id}" ]; then
+            echo "Hotfix releases requires the issue id set in the 'fbc.issueId' key of the ReleasePlanAdmission " \
+                 "spec.data field"
+            exit 1
+          fi
+          target_index="${target_index}-${issue_id}-${timestamp}"
+        elif [ "${pre_ga}" == "true" ]; then
+          if [ -z "${product_name}" -o -z "${product_version}" ]; then
+            echo "Pre-GA releases require 'fbc.productName' and 'fbc.productVersion' set in the ReleasePlanAdmission " \
+                 "spec.data field"
+            exit 1
+          fi
+          target_index="${target_index}-${product_name}-${product_version}-${timestamp}"
+        fi
+
+        echo -n $timestamp > $(results.buildTimestamp.path)
+        echo -n $target_index > $(results.requestTargetIndex.path)
+        jq -n --arg target_index "$target_index" '{"index_image": {"target_index": $target_index}}' | tee $RESULTS_FILE
+
+        pipelinerun_label="internal-services.appstudio.openshift.io/pipelinerun-uid"
+
+        # The internal-request script will create the InternalRequest and wait until it finishes to get its status
+        # If it fails (Failed, Rejected or Timed out) the script will exit and display the reason.
+        echo "Creating InternalRequest to add FBC contribution to index image:"
+        internal-request -r "${request}" \
+            -p binaryImage=$(params.binaryImage) \
+            -p fromIndex=$(params.fromIndex) \
+            -p targetIndex=${target_index} \
+            -p fbcFragment=${fbc_fragment} \
+            -p iibServiceConfigSecret=${iib_service_config_secret} \
+            -p iibServiceAccountSecret=${iib_service_account_secret} \
+            -p iibOverwriteFromIndexCredential=${iib_overwrite_from_index_credential} \
+            -p buildTimeoutSeconds=${build_timeout_seconds} \
+            -p buildTags=${build_tags} \
+            -p addArches=${add_arches} \
+            -p hotfix=${hotfix} \
+            -p stagedIndex=${staged_index} \
+            -l ${pipelinerun_label}=$(params.pipelineRunUid) \
+            -t ${request_timeout_seconds} |tee $(workspaces.data.path)/ir-$(context.taskRun.uid)-output.log
+
+        internalRequest=$(awk 'NR==1{ print $2 }' $(workspaces.data.path)/ir-$(context.taskRun.uid)-output.log | xargs)
+        echo "done (${internalRequest})"
+
+        # Fetching InternalRequest status and populating results
+        results=$(kubectl get internalrequest ${internalRequest} -o jsonpath='{.status.results}')
+        echo "${results}" > "$(workspaces.data.path)/ir-$(context.taskRun.uid)-result.json"
+
+        conditions=$(kubectl get internalrequest ${internalRequest} \
+          -o jsonpath='{.status.conditions[?(@.type=="Succeeded")]}')
+
+        jq -r '.genericResult | fromjson' <<< "${results}" | jq -r '.sign_index_image' |tr -d "\n" \
+            | tee $(results.mustSignIndexImage.path)
+        jq -r '.genericResult | fromjson' <<< "${results}" | jq -r '.publish_index_image' |tr -d "\n" \
+            | tee $(results.mustPublishIndexImage.path)
+
+        jq '.reason // "Unset"'  <<< "${conditions}" | tee $(results.requestReason.path)
+        jq '.message // "Unset"' <<< "${conditions}" | tee $(results.requestMessage.path)
+
+        jq -r '.indexImageDigests' <<< "${results}" |  tee $(results.indexImageDigests.path)
